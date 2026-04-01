@@ -1,0 +1,14 @@
+filters:
+  api_sources:
+    - "src/api/**/*.py"
+    - "!src/api/tests/**"
+
+  tests:
+    - "src/api/tests/**"
+
+  documentation:
+    - "README.md"
+    - "docs/**/*.md"
+
+  infra:
+    - "infra/**"
