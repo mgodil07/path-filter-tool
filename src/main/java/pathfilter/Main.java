@@ -1,27 +1,42 @@
 package pathfilter;
 
-import java.util.*;
+import java.io.InputStream;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 
 public class Main {
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
 
         if (args.length == 0) {
             System.out.println("Usage: path-filter <files>");
-            return;
+            System.exit(1);
         }
 
-        List<String> files = Arrays.asList(args);
+        try {
+            List<String> files = Arrays.asList(args);
 
-        Config config = Loader.load("filters.yaml");
+            InputStream configStream =
+                Main.class.getClassLoader().getResourceAsStream("filters.yaml");
 
-        Map<String, Boolean> results =
-                Engine.evaluate(config, files);
+            if (configStream == null) {
+                throw new RuntimeException("filters.yaml not found in resources");
+            }
 
-        for (var entry : results.entrySet()) {
-            System.out.println(
-                entry.getKey() + "=" + entry.getValue()
-            );
+            Config config = Loader.load(configStream);
+
+            Map<String, Boolean> results = Engine.evaluate(config, files);
+
+            results.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(e ->
+                        System.out.println(e.getKey() + "=" + e.getValue())
+                    );
+
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
+            System.exit(1);
         }
     }
 }

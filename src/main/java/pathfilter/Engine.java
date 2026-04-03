@@ -5,10 +5,11 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class Engine {
 
@@ -19,71 +20,88 @@ public class Engine {
         List<PathMatcher> excludes;
 
         Filter(String name, List<String> patterns) {
+
             this.name = name;
             this.includes = new ArrayList<>();
             this.excludes = new ArrayList<>();
+
             if (patterns == null || patterns.isEmpty()) {
-                System.err.println("Warning: Filter '" + name + "' has no patterns and will never match.");
-                return;
+                throw new IllegalArgumentException(
+                        "Filter '" + name + "' must contain at least one pattern");
             }
+
+            String separator = FileSystems.getDefault().getSeparator();
+
             for (String p : patterns) {
+
                 try {
-                    if (p.startsWith("!")) {
-                        excludes.add(FileSystems.getDefault().getPathMatcher("glob:" + p.substring(1)));
+
+                    boolean isExclude = p.startsWith("!");
+                    String pattern = isExclude ? p.substring(1) : p;
+
+                    // normalize pattern for platform
+                    String normalized = pattern.replace("/", separator);
+
+                    PathMatcher matcher =
+                            FileSystems.getDefault().getPathMatcher("glob:" + normalized);
+
+                    if (isExclude) {
+                        excludes.add(matcher);
                     } else {
-                        includes.add(FileSystems.getDefault().getPathMatcher("glob:" + p));
+                        includes.add(matcher);
                     }
-                } catch (Exception e) {
-                    System.err.println("Invalid pattern in filter '" + name + "': " + p);
+
+                } catch (IllegalArgumentException e) {
+
+                    throw new IllegalArgumentException(
+                            "Invalid pattern in filter '" + name + "': " + p,
+                            e
+                    );
                 }
             }
         }
 
         boolean matches(Path path) {
-            return matchesAny(includes, path) && !matchesAny(excludes, path);
+
+            boolean isIncluded = includes.isEmpty() || matchesAny(includes, path);
+            boolean isExcluded = matchesAny(excludes, path);
+
+            return isIncluded && !isExcluded;
         }
 
         private boolean matchesAny(List<PathMatcher> matchers, Path path) {
-            for (PathMatcher m : matchers) {
-                if (m.matches(path)) {
+
+            for (PathMatcher matcher : matchers) {
+                if (matcher.matches(path)) {
                     return true;
                 }
             }
+
             return false;
         }
     }
 
     public static Map<String, Boolean> evaluate(Config config, List<String> files) {
 
-        Map<String, Boolean> results = new java.util.concurrent.ConcurrentHashMap<>();
-    
-        List<Filter> filters = new ArrayList<>();
-    
-        for (var entry : config.filters.entrySet()) {
-            filters.add(new Filter(entry.getKey(), entry.getValue()));
-            results.put(entry.getKey(), false);
+        if (files == null || files.isEmpty() || config.filters == null) {
+            return Collections.emptyMap();
         }
-    
-        if (files == null || files.isEmpty()) {
-            return results;
-        }
-    
-        Set<String> uniqueFiles = new HashSet<>(files);
-    
-        uniqueFiles.parallelStream().forEach(f -> {
-    
-            Path path = Paths.get(f);
-    
-            for (Filter filter : filters) {
-    
-                if (!results.get(filter.name) && filter.matches(path)) {
-                    results.put(filter.name, true);
-                }
-    
-            }
-    
-        });
-    
-        return results;
+
+        Set<Path> uniquePaths = files.stream()
+                .map(f -> Paths.get(f).normalize())
+                .collect(Collectors.toSet());
+
+        return config.filters.entrySet()
+                .parallelStream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> {
+                            Filter filter =
+                                    new Filter(entry.getKey(), entry.getValue());
+
+                            return uniquePaths.stream()
+                                    .anyMatch(filter::matches);
+                        }
+                ));
     }
 }
