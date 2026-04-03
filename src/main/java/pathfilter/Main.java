@@ -1,9 +1,8 @@
 package pathfilter;
 
 import java.io.InputStream;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.nio.file.*;
+import java.util.*;
 
 public class Main {
 
@@ -14,21 +13,23 @@ public class Main {
             System.exit(1);
         }
 
-        try {
-            List<String> files = Arrays.asList(args);
+        Path configPath = Paths.get("filters.yaml");
 
-            InputStream configStream =
-                Main.class.getClassLoader().getResourceAsStream("filters.yaml");
+        if (!Files.exists(configPath)) {
+            System.err.println("Error: filters.yaml not found in current directory.");
+            System.exit(1);
+        }
 
-            if (configStream == null) {
-                throw new RuntimeException("filters.yaml not found in resources");
-            }
+        try (InputStream configStream = Files.newInputStream(configPath)) {
 
             Config config = Loader.load(configStream);
 
+            List<String> files = Arrays.asList(args);
+
             Map<String, Boolean> results = Engine.evaluate(config, files);
 
-            results.entrySet().stream()
+            results.entrySet()
+                    .stream()
                     .sorted(Map.Entry.comparingByKey())
                     .forEach(e ->
                         System.out.println(e.getKey() + "=" + e.getValue())
